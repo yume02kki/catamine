@@ -1,8 +1,9 @@
-# docker compose up --build                       → postgres, api, proxy, web
+# docker compose up --build                       → postgres, api, proxy, web, mcp
 # docker compose --profile demo up --build        → + two sample upstreams and a seeded demo mission
 # docker compose --profile loadtest up -d --build && docker compose run --rm k6
 #
 # Ports: web http://localhost:3000 · api http://localhost:8081 · proxy http://localhost:8080/m/{slug}/…
+#        mcp http://127.0.0.1:8090/mcp (Streamable HTTP) and /sse (legacy SSE), see docs/MCP.md
 name: api-mirror
 
 x-postgres-cs: &pg "Host=postgres;Database=mirror;Username=mirror;Password=${POSTGRES_PASSWORD:-mirror}"
@@ -73,6 +74,21 @@ services:
     healthcheck:
       <<: *health
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+    restart: unless-stopped
+
+  mcp:
+    build: { context: ., dockerfile: deploy/docker/mcp.Dockerfile }
+    # MCP server for AI assistants and local LLMs. It only talks to the api, never to Postgres.
+    environment:
+      KITTYPARTY_API_URL: http://api:8080
+      KITTYPARTY_MCP_READONLY: ${KITTYPARTY_MCP_READONLY:-false}
+      KITTYPARTY_MCP_ALLOWED_ORIGINS: ${KITTYPARTY_MCP_ALLOWED_ORIGINS:-}
+    # Loopback only: the MCP endpoint has no authentication of its own.
+    ports: ["127.0.0.1:8090:8090"]
+    depends_on: [api]
+    healthcheck:
+      <<: *health
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8090 && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
     restart: unless-stopped
 
   # ── demo / load test helpers ───────────────────────────────────────────

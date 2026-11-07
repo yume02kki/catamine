@@ -21,6 +21,8 @@
                                                PostgreSQL (PVC)
                                                      ▲
    browser ──▶ web (nginx, Vite build) ──/api──▶  api  (CRUD, log queries, SSE, jobs)
+                                                     ▲
+   AI assistant / local LLM ──stdio or HTTP──▶  mcp (MCP server, kittyparty-mcp)
 ```
 
 | Service | Role | State | Scales |
@@ -28,6 +30,7 @@
 | **proxy** | Proxy endpoints `/m/{slug}/**`, mirroring, diffing, log writes | none (config snapshot cached in memory + optional file) | horizontally, behind any L4/L7 LB |
 | **api** | Missions/rules CRUD, keyset log queries, live SSE, background jobs (re-diff, replay, fuzz, export, import), partition maintenance & retention, migrations | jobs in Postgres; export files on a volume | horizontally (jobs claimed with `FOR UPDATE SKIP LOCKED`) |
 | **web** | Static Vite build served by nginx; proxies `/api` to api | none | horizontally |
+| **mcp** | Model Context Protocol server for AI assistants and local LLMs (stdio, Streamable HTTP, legacy SSE); calls only the api. See [`MCP.md`](MCP.md) | Streamable HTTP sessions in memory | one per client (stdio) or one shared HTTP instance |
 | **postgres** | Config, jobs, partitioned traffic log | PVC / named volume | single primary |
 
 Shared code lives in `src/Mirror.Core` (diff engine, rules, JSON paths, models, compression) and `src/Mirror.Data` (EF Core context + migrations, raw Npgsql log writer/reader, partition SQL).

@@ -9,9 +9,11 @@ resources:
   - api.yaml
   - proxy.yaml
   - web.yaml
+  - mcp.yaml
   - ingress.yaml
 # Point the images at your registry:
 images:
   - { name: ghcr.io/your-org/mirror-api, newTag: latest }
   - { name: ghcr.io/your-org/mirror-proxy, newTag: latest }
   - { name: ghcr.io/your-org/mirror-web, newTag: latest }
+  - { name: ghcr.io/your-org/mirror-mcp, newTag: latest }

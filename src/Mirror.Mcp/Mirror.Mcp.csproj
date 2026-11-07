@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>Mirror.Mcp</RootNamespace>
+    <AssemblyName>kittyparty-mcp</AssemblyName>
+    <Version>2.0.0</Version>
+    <!-- stdio clients start many short-lived processes: favour startup over throughput. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Mirror.Mcp.Tests" />
+  </ItemGroup>
+</Project>

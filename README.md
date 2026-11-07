@@ -11,7 +11,7 @@ Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the services, data flow 
 ## Quick start (docker compose)
 
 ```bash
-docker compose up --build                    # postgres, api, proxy, web
+docker compose up --build                    # postgres, api, proxy, web, mcp
 docker compose --profile demo up --build     # + two sample upstreams and a seeded "demo" mission
 ```
 
@@ -20,6 +20,7 @@ docker compose --profile demo up --build     # + two sample upstreams and a seed
 | http://localhost:8080/m/{slug}/… | **proxy**: point clients here instead of Main |
 | http://localhost:8081/api/… | **api** |
 | http://localhost:3000 | **web**: the KittyParty UI (nginx; `/api` is proxied to the api) |
+| http://127.0.0.1:8090/mcp | **mcp**: MCP server for AI assistants and local LLMs (loopback only) |
 
 With the demo profile:
 
@@ -107,6 +108,21 @@ curl -X POST "localhost:8081/api/import?slug=orders-copy" --data-binary @orders.
 
 Jobs are rows in Postgres. They checkpoint progress, survive restarts (another api instance resumes them) and can be cancelled.
 
+## MCP server (AI assistants and local LLMs)
+
+`src/Mirror.Mcp` is a complete [Model Context Protocol](https://modelcontextprotocol.io) server, `kittyparty-mcp`. With it an assistant can triage a mission, read request diffs and bodies, preview and add rules, replay and fuzz requests, and check whether Dev is ready to replace Main. It is written to work well with small local models (Ollama, LM Studio, Open WebUI, Jan, …): short text results, missions looked up by name, forgiving arguments, errors that say what to do next, and a read-only mode.
+
+* Transports: stdio, Streamable HTTP (`/mcp`) and legacy SSE (`/sse`). Protocol versions 2025-06-18, 2025-03-26 and 2024-11-05.
+* 23 tools (13 read-only), resources for missions, rules, causes, stats and request diffs, 3 prompts (`triage_mission`, `tune_rules`, `release_check`), completions and logging.
+
+```bash
+dotnet publish src/Mirror.Mcp -c Release -o ./bin/mcp
+KITTYPARTY_API_URL=http://localhost:8081 dotnet ./bin/mcp/kittyparty-mcp.dll --stdio            # for a client that starts it
+dotnet ./bin/mcp/kittyparty-mcp.dll --http --port 8090 --api-url http://localhost:8081 --read-only  # shared HTTP server
+```
+
+Client configs (LM Studio, Ollama clients, Open WebUI, Continue, Claude Desktop, …), the tool list and tips for local models are in [`docs/MCP.md`](docs/MCP.md).
+
 ## Configuration
 
 Everything is environment variables. The main ones:
@@ -140,13 +156,14 @@ Everything is environment variables. The main ones:
 
 ## Kubernetes
 
-Manifests are in `deploy/k8s` (kustomize): namespace, ConfigMap/Secret, Postgres StatefulSet with a PVC, a migration Job, api (with an export PVC), proxy (3+ replicas, HPA, PDB, spread across nodes) and web, plus an example Ingress.
+Manifests are in `deploy/k8s` (kustomize): namespace, ConfigMap/Secret, Postgres StatefulSet with a PVC, a migration Job, api (with an export PVC), proxy (3+ replicas, HPA, PDB, spread across nodes), web and the MCP server (read-only, no Ingress), plus an example Ingress.
 
 ```bash
 # build and push images (context = repo root)
 docker build -f deploy/docker/api.Dockerfile   -t <registry>/mirror-api:<tag>   .
 docker build -f deploy/docker/proxy.Dockerfile -t <registry>/mirror-proxy:<tag> .
 docker build -f deploy/docker/web.Dockerfile   -t <registry>/mirror-web:<tag>   .
+docker build -f deploy/docker/mcp.Dockerfile   -t <registry>/mirror-mcp:<tag>   .
 
 # set images in deploy/k8s/kustomization.yaml and secrets in deploy/k8s/config.yaml, then
 kubectl apply -k deploy/k8s
@@ -158,7 +175,7 @@ On each release, delete and re-apply `job/mirror-migrate` before rolling out the
 ## Development
 
 ```bash
-dotnet test                     # xUnit: diff engine, every rule type, fuzz generator, codec, proxy safety tests
+dotnet test                     # xUnit: diff engine, every rule type, fuzz generator, codec, proxy safety tests, MCP server
 (cd web && npm ci && npm test)  # vitest: side-by-side alignment, folding, key matching, search syntax, rule suggestions
 (cd web && npm run dev)         # UI on http://localhost:5173, proxies /api to http://localhost:8081 (API_URL to change)
 dotnet run --project src/Mirror.Api      # needs Postgres; migrates on start
@@ -175,6 +192,7 @@ Load test: see [`loadtest/README.md`](loadtest/README.md). In the development ru
 | `src/Mirror.Data` | EF Core context + migration, partitioned log schema, COPY writer, keyset queries |
 | `src/Mirror.Proxy` | proxy service |
 | `src/Mirror.Api` | api service (endpoints, jobs, maintenance, SSE) |
+| `src/Mirror.Mcp` | MCP server for AI assistants and local LLMs (see `docs/MCP.md`) |
 | `src/Mirror.TestUpstream` | deterministic JSON upstream for demos and load tests |
 | `web/` | KittyParty UI: React + TypeScript + Vite, TanStack Query/Virtual, diff Web Worker |
 | `deploy/` | Dockerfiles, nginx config, k8s manifests, demo seed |

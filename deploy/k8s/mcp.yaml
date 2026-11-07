@@ -1,0 +1,45 @@
+# MCP server for AI assistants and local LLMs. It is stateless towards the database: every call goes
+# through the api service. It has no authentication of its own, so it has no Ingress: reach it with
+#   kubectl -n api-mirror port-forward svc/mirror-mcp 8090:8090
+# and point your MCP client at http://127.0.0.1:8090/mcp. Put an authenticating proxy in front
+# before exposing it any further.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mirror-mcp
+  namespace: api-mirror
+spec:
+  selector: { app: mirror-mcp }
+  ports: [{ name: http, port: 8090, targetPort: 8090 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mirror-mcp
+  namespace: api-mirror
+spec:
+  # Streamable HTTP sessions live in memory; with more than one replica use session affinity.
+  replicas: 1
+  selector:
+    matchLabels: { app: mirror-mcp }
+  template:
+    metadata:
+      labels: { app: mirror-mcp }
+    spec:
+      securityContext: { runAsNonRoot: true }
+      containers:
+        - name: mcp
+          image: ghcr.io/your-org/mirror-mcp:latest
+          ports: [{ containerPort: 8090, name: http }]
+          env:
+            - { name: KITTYPARTY_API_URL, value: http://mirror-api:8080 }
+            - { name: KITTYPARTY_MCP_READONLY, value: "true" }   # set to "false" to allow rule edits, replays and mission changes
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { memory: 256Mi }
