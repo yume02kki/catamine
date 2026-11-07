@@ -17,6 +17,8 @@ public sealed class ApiOptions
     public int PartitionsAhead { get; set; } = 3;
     public bool MigrateOnStartup { get; set; } = true;
     public string[] CorsOrigins { get; set; } = [];
+    /// <summary>Public base URL of the proxy, shown in the UI as the mission's proxy endpoint.</summary>
+    public string ProxyPublicUrl { get; set; } = "http://localhost:8080";
 }
 
 /// <summary>Sends one request to both Main and Dev (in parallel) for replays and fuzzing, and records the diff.</summary>

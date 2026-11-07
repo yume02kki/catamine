@@ -101,6 +101,13 @@ All list endpoints use keyset pagination (`cursor` = opaque base64 of the last s
 * `POST /api/missions/{id}/jobs/{rediff|replay|fuzz|export}`, `POST /api/import`, `GET /api/jobs`, `GET /api/jobs/{id}`, `POST /api/jobs/{id}/cancel`, `GET /api/jobs/{id}/download`, `GET /api/missions/{id}/export` (direct stream).
 * `GET /api/proxy/instances` (aggregated proxy metrics for the UI).
 
+## 6b. Frontend
+
+* **Server state**: TanStack Query. Logs use an infinite query over the keyset cursor, and every filter and sort is a query parameter evaluated by Postgres. Nothing ever loads a whole log.
+* **Large lists**: TanStack Virtual renders only the visible rows of the log, the change list and the side-by-side view.
+* **Live updates**: one `EventSource` per open mission. The api's LISTEN/NOTIFY-driven stream emits at most one batch per second, the client coalesces again to one render per second, applies the current filters locally, and holds rows behind a "↑ N new" pill while the user is scrolled.
+* **Diffs**: the detail endpoint returns headers and the server's difference list. Bodies are fetched lazily, inside a Web Worker, which pretty-prints both documents in lockstep (object keys unioned, arrays matched by primary key when a rule exists) and returns aligned rows tagged with JSON paths and kinds. The main thread folds unchanged runs and virtualizes, and cross-checks rows against the server's list to dim differences that rules exclude.
+
 ## 7. Background jobs
 
 Rows in `jobs` (`queued → running → succeeded|failed|cancelled`). Each api instance runs a `JobRunner` that claims work with `FOR UPDATE SKIP LOCKED`, heartbeats every few seconds and stores a **checkpoint** (keyset cursor / line number). A job whose heartbeat is stale (instance died) is re-claimed and resumes from its checkpoint. Cancellation is a flag checked between batches. Rate limits use `System.Threading.RateLimiting` token buckets.

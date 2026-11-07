@@ -11,7 +11,7 @@ public sealed record MissionDto(
     Guid Id, string Slug, string Name, string? Description, string MainUrl, string DevUrl, string ProxyPath,
     bool Enabled, bool MirrorEnabled, double SampleRate, string[] MirrorMethods, int MaxMirrorBodyBytes,
     int DevTimeoutMs, int DevMaxConcurrency, HeaderPolicy HeaderPolicy, string[] ComparedHeaders, int RulesVersion,
-    int RetentionDays, int? MaxStorageMb, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string[] Warnings);
+    int RetentionDays, int? MaxStorageMb, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string[] Warnings, int RuleCount);
 
 public sealed record MissionUpsert
 {
@@ -88,6 +88,7 @@ public sealed record LogFilter
     public int? DevStatus { get; init; }
     public string? Source { get; init; }
     public Guid? JobId { get; init; }
+    public Guid? ReplayOf { get; init; }
     public string? Signature { get; init; }
     public DateTime? From { get; init; }
     public DateTime? To { get; init; }
@@ -121,6 +122,7 @@ public sealed record LogFilter
             DevStatus = DevStatus,
             Source = source,
             JobId = JobId,
+            ReplayOf = ReplayOf,
             Signature = sig,
             From = From?.ToUniversalTime(),
             To = To?.ToUniversalTime(),
@@ -152,11 +154,13 @@ public static class MissionMapping
             : [$"Mirroring {string.Join(", ", unsafeOn)} sends real write requests to Dev. Make sure Dev uses an isolated datastore and cannot call production services."];
     }
 
-    public static MissionDto ToDto(MissionEntity m) => new(
+    public static MissionDto ToDto(MissionEntity m) => ToDto(m, m.Rules.Count);
+
+    public static MissionDto ToDto(MissionEntity m, int ruleCount) => new(
         m.Id, m.Slug, m.Name, m.Description, m.MainUrl, m.DevUrl, $"/m/{m.Slug}", m.Enabled, m.MirrorEnabled, m.SampleRate,
         m.MirrorMethods, m.MaxMirrorBodyBytes, m.DevTimeoutMs, m.DevMaxConcurrency,
         JsonSerializer.Deserialize<HeaderPolicy>(m.HeaderPolicy, MissionSnapshotLoader.JsonOptions) ?? new HeaderPolicy(),
-        m.ComparedHeaders, m.RulesVersion, m.RetentionDays, m.MaxStorageMb, m.CreatedAt, m.UpdatedAt, Warnings(m));
+        m.ComparedHeaders, m.RulesVersion, m.RetentionDays, m.MaxStorageMb, m.CreatedAt, m.UpdatedAt, Warnings(m), ruleCount);
 
     public static RuleDto ToDto(MissionRuleEntity r) => new(r.Id, r.Order, r.Type, r.Name, r.Enabled, JsonDocument.Parse(r.Config).RootElement.Clone());
 

@@ -23,6 +23,7 @@ public sealed record LogQuery
     public int? DevStatus { get; init; }
     public LogSource? Source { get; init; }
     public Guid? JobId { get; init; }
+    public Guid? ReplayOf { get; init; }
     public long? Signature { get; init; }
     public DateTime? From { get; init; }
     public DateTime? To { get; init; }
@@ -141,6 +142,7 @@ public sealed class LogRepository(NpgsqlDataSource ds)
         if (q.DevStatus is { } dvs) { sql.Append($" AND {p}dev_status = @dvs"); cmd.Parameters.AddWithValue("dvs", (short)dvs); }
         if (q.Source is { } src) { sql.Append($" AND {p}source = @src"); cmd.Parameters.AddWithValue("src", (short)src); }
         if (q.JobId is { } job) { sql.Append($" AND {p}job_id = @job"); cmd.Parameters.AddWithValue("job", job); }
+        if (q.ReplayOf is { } rof) { sql.Append($" AND {p}replay_of = @rof"); cmd.Parameters.AddWithValue("rof", rof); }
         if (q.Signature is { } sig) { sql.Append($" AND {p}signature = @sig"); cmd.Parameters.AddWithValue("sig", sig); }
         if (q.From is { } from) { sql.Append($" AND {p}ts >= @from"); cmd.Parameters.AddWithValue("from", NpgsqlDbType.TimestampTz, DateTime.SpecifyKind(from, DateTimeKind.Utc)); }
         if (q.To is { } to) { sql.Append($" AND {p}ts < @to"); cmd.Parameters.AddWithValue("to", NpgsqlDbType.TimestampTz, DateTime.SpecifyKind(to, DateTimeKind.Utc)); }
@@ -273,6 +275,29 @@ public sealed class LogRepository(NpgsqlDataSource ds)
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))
             list.Add(new VerdictCount((Verdict)r.GetInt16(0), r.GetInt64(1), r.IsDBNull(2) ? 0 : r.GetDouble(2), r.IsDBNull(3) ? 0 : r.GetDouble(3)));
+        return list;
+    }
+
+    public sealed record OverviewRow(Guid MissionId, int Bucket, Verdict Verdict, long Count, double MainMsSum, double DevMsSum);
+
+    /// <summary>Per-mission counts in <paramref name="buckets"/> equal time buckets over a window, from the minute rollup (one query for all missions).</summary>
+    public async Task<IReadOnlyList<OverviewRow>> OverviewAsync(DateTime from, DateTime to, int buckets, CancellationToken ct)
+    {
+        await using var cmd = ds.CreateCommand("""
+            SELECT mission_id,
+                   least(@n - 1, floor(extract(epoch FROM bucket - @f) / @w)::int) AS b,
+                   verdict, sum(n)::bigint, sum(main_ms_sum), sum(dev_ms_sum)
+            FROM traffic_stats_minute WHERE bucket >= @f AND bucket < @t
+            GROUP BY 1, 2, 3
+            """);
+        cmd.Parameters.AddWithValue("f", NpgsqlDbType.TimestampTz, from);
+        cmd.Parameters.AddWithValue("t", NpgsqlDbType.TimestampTz, to);
+        cmd.Parameters.AddWithValue("n", buckets);
+        cmd.Parameters.AddWithValue("w", Math.Max(1.0, (to - from).TotalSeconds / buckets));
+        var list = new List<OverviewRow>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+            list.Add(new OverviewRow(r.GetGuid(0), r.GetInt32(1), (Verdict)r.GetInt16(2), r.GetInt64(3), r.GetDouble(4), r.GetDouble(5)));
         return list;
     }
 

@@ -19,6 +19,7 @@ data:
   Api__ExportDir: /data/exports
   Api__MaxConcurrentJobs: "4"
   Api__MaintenanceIntervalMinutes: "10"
+  Api__ProxyPublicUrl: https://proxy.example.internal   # shown in the UI as the mission endpoint
   # web
   API_UPSTREAM: http://mirror-api:8080
 ---

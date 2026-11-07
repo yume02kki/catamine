@@ -4,8 +4,7 @@ Send real traffic through a proxy to your production API (**Main**), mirror it o
 
 Everything is organised in **missions**. A mission has a Main URL, a Dev URL and a proxy endpoint `http://<proxy>/m/{slug}/…`.
 
-> **Status:** the backend (proxy, api, Postgres schema, jobs, deployment, tests, load test) is done.
-> The frontend is a placeholder status page while a design direction is chosen. See *Frontend* below.
+The UI is **KittyParty** (design direction A, "Nebula Console"): dark, dense, keyboard-friendly, with the kitty in the corner.
 
 Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the services, data flow and how production safety is guaranteed.
 
@@ -20,7 +19,7 @@ docker compose --profile demo up --build     # + two sample upstreams and a seed
 |---|---|
 | http://localhost:8080/m/{slug}/… | **proxy**: point clients here instead of Main |
 | http://localhost:8081/api/… | **api** |
-| http://localhost:3000 | **web** (nginx; `/api` is proxied to the api) |
+| http://localhost:3000 | **web**: the KittyParty UI (nginx; `/api` is proxied to the api) |
 
 With the demo profile:
 
@@ -129,6 +128,7 @@ Everything is environment variables. The main ones:
 | `Api__MigrateOnStartup` | true | api (`--migrate-only` runs migrations and exits) |
 | `Api__ExportDir` | `/data/exports` | api |
 | `Api__MaxConcurrentJobs` | 4 | api |
+| `Api__ProxyPublicUrl` | `http://localhost:8080` | api: proxy base URL shown in the UI |
 | `Api__CorsOrigins__0` | | api (only for running the UI from another origin) |
 | `API_UPSTREAM` | `http://api:8080` | web |
 
@@ -158,6 +158,8 @@ On each release, delete and re-apply `job/mirror-migrate` before rolling out the
 
 ```bash
 dotnet test                     # xUnit: diff engine, every rule type, fuzz generator, codec, proxy safety tests
+(cd web && npm ci && npm test)  # vitest: side-by-side alignment, folding, key matching, search syntax, rule suggestions
+(cd web && npm run dev)         # UI on http://localhost:5173, proxies /api to http://localhost:8081 (API_URL to change)
 dotnet run --project src/Mirror.Api      # needs Postgres; migrates on start
 dotnet run --project src/Mirror.Proxy
 VARIANT=main ASPNETCORE_URLS=http://localhost:5001 dotnet run --project src/Mirror.TestUpstream
@@ -173,9 +175,24 @@ Load test: see [`loadtest/README.md`](loadtest/README.md). In the development ru
 | `src/Mirror.Proxy` | proxy service |
 | `src/Mirror.Api` | api service (endpoints, jobs, maintenance, SSE) |
 | `src/Mirror.TestUpstream` | deterministic JSON upstream for demos and load tests |
-| `web/` | frontend (placeholder until a design direction is chosen) |
+| `web/` | KittyParty UI: React + TypeScript + Vite, TanStack Query/Virtual, diff Web Worker |
 | `deploy/` | Dockerfiles, nginx config, k8s manifests, demo seed |
 
-## Frontend
+## Frontend (KittyParty)
 
-Three design directions are mocked up for review (Console, Workbench and Briefing). The real UI (React + TanStack Query/Virtual, diffs in Web Workers, SSE live updates) gets built on the chosen direction. Every endpoint it needs is already listed above.
+![Traffic](docs/screenshots/traffic.png)
+
+`web/` is React 18 + TypeScript + Vite. TanStack Query handles server state and TanStack Virtual handles long lists. The production build is served by nginx.
+
+| Screen | What it does |
+|---|---|
+| **Missions** | Fleet KPIs (mirrored volume, mirroring cost on the main path, drops, Dev errors), filters (needs attention, mirrors writes, paused), a 24 h diff-rate sparkline and rule count per mission, plus create/edit/delete. |
+| **Traffic** | Proxy endpoint with copy/curl buttons, a stats strip, and a virtualized, infinitely scrolling log filtered and sorted on the server. The search box understands `path:` `method:` `status:` `kind:` `verdict:` `source:` `job:`. Each row has a coloured bar showing the mix of changed/added/removed/type differences. The side panel groups mismatches **by cause**, with one-click rule suggestions; selecting a request opens an inspector there instead. |
+| **Request diff** | Full-height side-by-side view. Both bodies are fetched and aligned **in a Web Worker**, structure-aware and matching arrays by the mission's primary-key rules, so multi-MB JSON stays responsive: a 5.8 MB / 384k-line response aligns in about 0.4 s. Unchanged runs are folded and expand on click. Lines that differ but are excluded by rules are dimmed. A list of every difference jumps to the line (`n`/`N`). Also: Headers, Request (copy as curl), Replays, `[`/`]` for the previous/next request, Replay & compare. |
+| **Rules** | Ordered list (drag, up/down, enable), a typed editor per rule type with server-side validation, a JSON view, a **live preview** of the draft on recent traffic (now / after / newly matching), and Save with an optional background re-diff. Suggestions from other screens arrive as unsaved drafts. A summary of the mission's mirroring settings is included. |
+| **Replay & fuzz** | Start replay-all (filters, rate, limit), fuzz runs (seed request or sample, mutation families, rate), export (streamed or as a job) and re-diff, and follow their progress. |
+| **Jobs / Proxy fleet** | All jobs with progress, cancel, download and result summaries, plus import upload. Every proxy's queue, drops, log writer, main-path latency (mirrored vs not) and circuit-breaker state. |
+
+Live updates use Server-Sent Events. New rows are prepended at most once per second, only if they match the current filters. While you are scrolled down they collect behind a "↑ N new" pill instead of moving the list. `⌘K` / `Ctrl+K` jumps to any mission or page.
+
+Writing to Dev is never one click away. Turning on POST/PUT/PATCH/DELETE mirroring asks for confirmation (and the api requires `acknowledgeUnsafeMethods`), and replaying or fuzzing write methods needs an explicit opt-in.

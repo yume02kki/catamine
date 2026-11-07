@@ -33,6 +33,7 @@ services:
       Api__MigrateOnStartup: "true"
       Api__ExportDir: /data/exports
       Api__MaxConcurrentJobs: "4"
+      Api__ProxyPublicUrl: http://localhost:8080
     volumes:
       - exports:/data/exports
     ports: ["8081:8080"]

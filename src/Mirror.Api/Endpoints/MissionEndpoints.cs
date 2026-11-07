@@ -24,12 +24,13 @@ public static partial class MissionEndpoints
         {
             var query = db.Missions.AsNoTracking();
             if (!string.IsNullOrWhiteSpace(q)) query = query.Where(m => EF.Functions.ILike(m.Name, $"%{q}%") || EF.Functions.ILike(m.Slug, $"%{q}%"));
-            var list = await query.OrderBy(m => m.Name).Take(1000).ToListAsync(ct);
-            return Results.Ok(list.Select(MissionMapping.ToDto));
+            var list = await query.OrderBy(m => m.Name).Take(1000)
+                .Select(m => new { Mission = m, Rules = m.Rules.Count }).ToListAsync(ct);
+            return Results.Ok(list.Select(x => MissionMapping.ToDto(x.Mission, x.Rules)));
         });
 
         g.MapGet("/{id:guid}", async (Guid id, MirrorDbContext db, CancellationToken ct) =>
-            await db.Missions.AsNoTracking().FirstOrDefaultAsync(m => m.Id == id, ct) is { } m
+            await db.Missions.AsNoTracking().Include(m => m.Rules).FirstOrDefaultAsync(m => m.Id == id, ct) is { } m
                 ? Results.Ok(MissionMapping.ToDto(m))
                 : Results.NotFound());
 
@@ -59,7 +60,7 @@ public static partial class MissionEndpoints
 
         g.MapPut("/{id:guid}", async (Guid id, MissionUpsert body, MirrorDbContext db, CancellationToken ct) =>
         {
-            var m = await db.Missions.FirstOrDefaultAsync(x => x.Id == id, ct);
+            var m = await db.Missions.Include(x => x.Rules).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (m is null) return Results.NotFound();
             var errors = Apply(m, body, isNew: false);
             if (errors.Count > 0) return Results.ValidationProblem(errors);
@@ -82,6 +83,40 @@ public static partial class MissionEndpoints
             cmd.Parameters.AddWithValue("m", id);
             await cmd.ExecuteNonQueryAsync(ct);
             return Results.NoContent();
+        });
+
+        // Sparklines and headline numbers for every mission in one call (from the per-minute rollup).
+        g.MapGet("/overview", async (int? hours, int? buckets, LogRepository repo, CancellationToken ct) =>
+        {
+            var to = DateTime.UtcNow;
+            var from = to.AddHours(-Math.Clamp(hours ?? 24, 1, 24 * 90));
+            var n = Math.Clamp(buckets ?? 24, 1, 200);
+            var rows = await repo.OverviewAsync(from, to, n, ct);
+            return Results.Ok(rows.GroupBy(r => r.MissionId).Select(g =>
+            {
+                long Count(params Verdict[] v) => g.Where(r => v.Contains(r.Verdict)).Sum(r => r.Count);
+                var total = g.Sum(r => r.Count);
+                var compared = Count(Verdict.Match, Verdict.Mismatch);
+                return new
+                {
+                    missionId = g.Key,
+                    total,
+                    match = Count(Verdict.Match),
+                    mismatch = Count(Verdict.Mismatch),
+                    devError = Count(Verdict.DevError),
+                    devTimeout = Count(Verdict.DevTimeout),
+                    notMirrored = Count(Verdict.NotMirrored),
+                    diffRate = compared == 0 ? (double?)null : (double)Count(Verdict.Mismatch) / compared,
+                    mainMsAvg = total == 0 ? 0 : g.Sum(r => r.MainMsSum) / total,
+                    devMsAvg = total == 0 ? 0 : g.Sum(r => r.DevMsSum) / total,
+                    buckets = Enumerable.Range(0, n).Select(i => new
+                    {
+                        total = g.Where(r => r.Bucket == i).Sum(r => r.Count),
+                        mismatch = g.Where(r => r.Bucket == i && r.Verdict == Verdict.Mismatch).Sum(r => r.Count),
+                        errors = g.Where(r => r.Bucket == i && r.Verdict is Verdict.DevError or Verdict.DevTimeout).Sum(r => r.Count),
+                    }),
+                };
+            }));
         });
 
         // ── Rules ──

@@ -93,6 +93,9 @@ app.MapGet("/readyz", async (NpgsqlDataSource ds, CancellationToken ct) =>
     }
 });
 
+app.MapGet("/api/config", (Microsoft.Extensions.Options.IOptions<ApiOptions> o) =>
+    Results.Ok(new { proxyPublicUrl = o.Value.ProxyPublicUrl.TrimEnd('/'), version = "2.0.0" }));
+
 MissionEndpoints.Map(app);
 LogEndpoints.Map(app);
 JobEndpoints.Map(app);

@@ -170,12 +170,12 @@ public static class LogEndpoints
 
     public sealed record LogListQuery(
         string? Verdict, string? DiffKind, string? Path, string? PathMode, string? Method, int? MainStatus, int? DevStatus,
-        string? Source, Guid? JobId, string? Signature, DateTime? From, DateTime? To, string? Sort, string? Cursor, int? Limit)
+        string? Source, Guid? JobId, Guid? ReplayOf, string? Signature, DateTime? From, DateTime? To, string? Sort, string? Cursor, int? Limit)
     {
         public LogFilter ToFilter() => new()
         {
             Verdict = Verdict, DiffKind = DiffKind, Path = Path, PathMode = PathMode, Method = Method, MainStatus = MainStatus,
-            DevStatus = DevStatus, Source = Source, JobId = JobId, Signature = Signature, From = From, To = To,
+            DevStatus = DevStatus, Source = Source, JobId = JobId, ReplayOf = ReplayOf, Signature = Signature, From = From, To = To,
         };
     }
 }
