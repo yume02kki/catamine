@@ -13,7 +13,7 @@ public sealed record ExchangeRequest(
     Guid MissionId, string Method, string Path, string? Query,
     IEnumerable<KeyValuePair<string, string>> Headers, byte[]? Body);
 
-public sealed record RecordOptions(bool StoreBodies, LogSource Source, Guid? JobId = null, Guid? ReplayOf = null);
+public sealed record RecordOptions(bool StoreBodies, LogSource Source, Guid? JobId = null, Guid? ReplayOf = null, bool RedactHeaders = true, string? Note = null);
 
 /// <summary>Turns a captured Main/Dev exchange into a diffed <see cref="LogRecord"/>. Shared by the proxy workers and the api's replay/fuzz jobs.</summary>
 public static class ExchangeRecorder
@@ -23,7 +23,7 @@ public static class ExchangeRecorder
         CompiledRuleSet rules, DiffSettings settings, RecordOptions options, (Guid Id, DateTime Ts)? identity = null)
     {
         var (id, ts) = identity ?? LogRecord.NewId();
-        string? note = devError;
+        string? note = devError ?? options.Note;
 
         var mainBody = Decode(main.Body, main.Headers, settings.MaxDiffBodyBytes, ref note);
         var devBody = dev is null ? [] : Decode(dev.Body, dev.Headers, settings.MaxDiffBodyBytes, ref note);
@@ -61,11 +61,11 @@ public static class ExchangeRecorder
             JobId = options.JobId,
             ReplayOf = options.ReplayOf,
             Note = note,
-            RequestHeaders = LogRecord.PackHeaders(OutboundRequest.Redact(req.Headers)),
+            RequestHeaders = LogRecord.PackHeaders(options.RedactHeaders ? OutboundRequest.Redact(req.Headers) : req.Headers),
             RequestBody = options.StoreBodies ? BodyCodec.Compress(req.Body) : null,
-            MainHeaders = LogRecord.PackHeaders(OutboundRequest.Redact(main.Headers)),
+            MainHeaders = LogRecord.PackHeaders(options.RedactHeaders ? OutboundRequest.Redact(main.Headers) : main.Headers),
             MainBody = options.StoreBodies ? BodyCodec.Compress(mainBody) : null,
-            DevHeaders = dev is null ? null : LogRecord.PackHeaders(OutboundRequest.Redact(dev.Headers)),
+            DevHeaders = dev is null ? null : LogRecord.PackHeaders(options.RedactHeaders ? OutboundRequest.Redact(dev.Headers) : dev.Headers),
             DevBody = options.StoreBodies && dev is not null ? BodyCodec.Compress(devBody) : null,
         };
         if (diff is not null) record.ApplyDiff(diff, verdict, rules.Version);

@@ -118,7 +118,7 @@ public sealed class MirrorWorkerService(
         try
         {
             (record, _) = ExchangeRecorder.Record(request, main, devSide, outcome, devError, m.Rules, m.DiffSettings,
-                new RecordOptions(_o.StoreBodies, LogSource.Live), (job.Id, job.Ts));
+                new RecordOptions(_o.StoreBodies, LogSource.Live, RedactHeaders: !_o.StoreSensitiveHeaders), (job.Id, job.Ts));
         }
         finally
         {

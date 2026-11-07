@@ -16,6 +16,8 @@ public sealed class ProxyOptions
     /// <summary>Bodies above this size skip field-level diffing.</summary>
     public int MaxDiffBodyBytes { get; set; } = 16 * 1024 * 1024;
     public bool StoreBodies { get; set; } = true;
+    /// <summary>When false (default), Authorization, Cookie, Set-Cookie and API-key headers are stored as [redacted].</summary>
+    public bool StoreSensitiveHeaders { get; set; }
 
     public int LogQueueCapacity { get; set; } = 20_000;
     public long LogQueueMaxBytes { get; set; } = 128L * 1024 * 1024;

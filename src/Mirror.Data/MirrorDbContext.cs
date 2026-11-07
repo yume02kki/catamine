@@ -16,6 +16,7 @@ public sealed class MirrorDbContext(DbContextOptions<MirrorDbContext> options) :
         {
             e.ToTable("missions");
             e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
             e.HasIndex(x => x.Slug).IsUnique();
             e.Property(x => x.Slug).HasMaxLength(64);
             e.Property(x => x.Name).HasMaxLength(200);
@@ -28,6 +29,7 @@ public sealed class MirrorDbContext(DbContextOptions<MirrorDbContext> options) :
         {
             e.ToTable("mission_rules");
             e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
             e.HasIndex(x => new { x.MissionId, x.Order });
             e.Property(x => x.Type).HasMaxLength(64);
             e.Property(x => x.Config).HasColumnType("jsonb");
@@ -36,6 +38,7 @@ public sealed class MirrorDbContext(DbContextOptions<MirrorDbContext> options) :
         {
             e.ToTable("jobs");
             e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
             e.HasIndex(x => new { x.Status, x.CreatedAt });
             e.HasIndex(x => new { x.MissionId, x.CreatedAt });
             e.Property(x => x.Type).HasMaxLength(32);
