@@ -61,7 +61,7 @@ public sealed class DevPipelines(IOptions<ProxyOptions> options)
 
     public static HttpClient CreateDevClient(ProxyOptions o) => new(new SocketsHttpHandler
     {
-        UseProxy = false,
+        UseProxy = o.UseSystemProxy,
         AllowAutoRedirect = false,
         UseCookies = false,
         AutomaticDecompression = DecompressionMethods.All,

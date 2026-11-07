@@ -31,6 +31,8 @@ public sealed class ProxyOptions
     public int MainConnectTimeoutMs { get; set; } = 10_000;
     public int MainActivityTimeoutSeconds { get; set; } = 100;
     public int DevMaxConnectionsPerServer { get; set; } = 512;
+    /// <summary>Route outbound calls (Main and Dev) through the HTTP(S)_PROXY environment proxy. Off by default: direct connections.</summary>
+    public bool UseSystemProxy { get; set; }
 
     /// <summary>Circuit breaker: failure ratio over the sampling window that opens the circuit.</summary>
     public double DevBreakerFailureRatio { get; set; } = 0.5;

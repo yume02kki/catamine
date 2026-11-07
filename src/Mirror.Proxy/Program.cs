@@ -51,7 +51,7 @@ builder.Services.AddKeyedSingleton("main", (sp, _) =>
     var o = sp.GetRequiredService<IOptions<ProxyOptions>>().Value;
     return new HttpMessageInvoker(new SocketsHttpHandler
     {
-        UseProxy = false,
+        UseProxy = o.UseSystemProxy,
         AllowAutoRedirect = false,
         AutomaticDecompression = DecompressionMethods.None,
         UseCookies = false,

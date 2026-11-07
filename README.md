@@ -123,6 +123,7 @@ Everything is environment variables. The main ones:
 | `Mirror__StoreBodies` / `Mirror__StoreSensitiveHeaders` | true / false | proxy |
 | `Mirror__LogBatchSize` / `Mirror__LogFlushIntervalMs` | 500 / 1000 | proxy: COPY batching |
 | `Mirror__ConfigRefreshSeconds` | 5 | proxy: config poll interval |
+| `Mirror__UseSystemProxy` / `Api__UseSystemProxy` | false | route outbound calls to Main/Dev through `HTTPS_PROXY` (egress proxies) |
 | `Mirror__SnapshotFile` | (unset; `/var/cache/mirror/snapshot.json` in the image) | proxy: config used on cold start if Postgres is down |
 | `Mirror__DevBreaker*` | 0.5 ratio / 20 min / 30 s window / 30 s break | proxy: circuit breaker |
 | `Api__MigrateOnStartup` | true | api (`--migrate-only` runs migrations and exits) |

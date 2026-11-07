@@ -98,6 +98,7 @@ public sealed class RediffJob(IServiceScopeFactory scopes, NpgsqlDataSource ds, 
         var state = resultPrev ?? new RediffState();
 
         var batch = new List<DiffUpdate>(200);
+        var moves = new List<(Guid, DateTime, Verdict, Verdict, float, float?)>();
         await foreach (var (log, body) in repo.StreamWithBodiesAsync(query, JobSupport.DecodeCursor(state.Cursor), 200, ct))
         {
             if (log.DevStatus is null) { state.Skipped++; continue; } // Dev never answered: nothing to compare
@@ -111,7 +112,11 @@ public sealed class RediffJob(IServiceScopeFactory scopes, NpgsqlDataSource ds, 
                 DevHeaders = LogRecord.UnpackHeaders(body.DevHeaders),
             }, rules, settings);
             var verdict = DiffEngine.DecideVerdict(DevOutcome.Ok, log.MainStatus, log.DevStatus.Value, diff);
-            if (verdict != log.Verdict) state.Changes.Bump($"{log.Verdict.ToWire()}->{verdict.ToWire()}");
+            if (verdict != log.Verdict)
+            {
+                state.Changes.Bump($"{log.Verdict.ToWire()}->{verdict.ToWire()}");
+                if (log.Source is LogSource.Live or LogSource.Import) moves.Add((log.MissionId, log.Ts, log.Verdict, verdict, log.MainMs, log.DevMs));
+            }
             state.Verdicts.Bump(verdict.ToWire());
 
             var rec = new LogRecord { Method = log.Method, Path = log.Path };
@@ -124,12 +129,15 @@ public sealed class RediffJob(IServiceScopeFactory scopes, NpgsqlDataSource ds, 
             if (batch.Count >= 200)
             {
                 await repo.UpdateDiffsAsync(batch, ct);
+                await repo.MoveStatsAsync(moves, ct);
                 batch.Clear();
+                moves.Clear();
                 await ctx.ReportAsync(state.Processed + state.Skipped, total, JsonSerializer.Serialize(state));
                 notifier.Touch(mission.Id);
             }
         }
         await repo.UpdateDiffsAsync(batch, ct);
+        await repo.MoveStatsAsync(moves, ct);
         await ctx.ReportAsync(state.Processed + state.Skipped, total, JsonSerializer.Serialize(state), force: true);
         notifier.Touch(mission.Id);
         return new { rulesVersion = rules.Version, processed = state.Processed, skipped = state.Skipped, verdicts = state.Verdicts, changes = state.Changes };

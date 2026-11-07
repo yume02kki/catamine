@@ -19,6 +19,8 @@ public sealed class ApiOptions
     public string[] CorsOrigins { get; set; } = [];
     /// <summary>Public base URL of the proxy, shown in the UI as the mission's proxy endpoint.</summary>
     public string ProxyPublicUrl { get; set; } = "http://localhost:8080";
+    /// <summary>Route replay/fuzz calls through the HTTP(S)_PROXY environment proxy. Off by default.</summary>
+    public bool UseSystemProxy { get; set; }
 }
 
 /// <summary>Sends one request to both Main and Dev (in parallel) for replays and fuzzing, and records the diff.</summary>
@@ -31,13 +33,13 @@ public sealed class ReplayService
     public ReplayService(Microsoft.Extensions.Options.IOptions<ApiOptions> options)
     {
         _o = options.Value;
-        _main = Create(TimeSpan.FromMilliseconds(_o.ReplayMainTimeoutMs));
-        _dev = Create(Timeout.InfiniteTimeSpan);
+        _main = Create(TimeSpan.FromMilliseconds(_o.ReplayMainTimeoutMs), _o.UseSystemProxy);
+        _dev = Create(Timeout.InfiniteTimeSpan, _o.UseSystemProxy);
     }
 
-    private static HttpClient Create(TimeSpan timeout) => new(new SocketsHttpHandler
+    private static HttpClient Create(TimeSpan timeout, bool useProxy) => new(new SocketsHttpHandler
     {
-        UseProxy = false,
+        UseProxy = useProxy,
         AllowAutoRedirect = false,
         UseCookies = false,
         AutomaticDecompression = DecompressionMethods.All,

@@ -51,41 +51,44 @@ public static class NdjsonFormat
 
     public static async Task<long> WriteAsync(Stream output, MissionEntity mission, NpgsqlDataSource ds, Func<long, Task>? progress, CancellationToken ct)
     {
-        // Both wrappers leave their inner stream open and are disposed asynchronously in order, so the gzip
-        // footer is written with async I/O (Kestrel response bodies reject synchronous writes).
+        // Both wrappers leave their inner stream open and are disposed exactly once, asynchronously and in order,
+        // so the gzip footer is written with async I/O (Kestrel response bodies reject synchronous writes).
         var gz = new GZipStream(output, CompressionLevel.Fastest, leaveOpen: true);
-        await using var _gz = gz;
         var w = new StreamWriter(gz, new UTF8Encoding(false), 1 << 16, leaveOpen: true);
-        await using var _w = w;
-
-        async Task Write(Line line) => await w.WriteLineAsync(JsonSerializer.Serialize(line, Options).AsMemory(), ct);
-
-        await Write(new Line("header", Format, Version, DateTimeOffset.UtcNow));
-        await Write(new Line("mission",
-            Mission: new ExportMission(mission.Slug, mission.Name, mission.Description, mission.MainUrl, mission.DevUrl, mission.Enabled,
-                mission.MirrorEnabled, mission.SampleRate, mission.MirrorMethods, mission.MaxMirrorBodyBytes, mission.DevTimeoutMs,
-                mission.DevMaxConcurrency, JsonDocument.Parse(mission.HeaderPolicy).RootElement.Clone(), mission.ComparedHeaders,
-                mission.RulesVersion, mission.RetentionDays, mission.MaxStorageMb),
-            Rules: mission.Rules.OrderBy(r => r.Order)
-                .Select(r => new ExportRule(r.Order, r.Type, r.Name, r.Enabled, JsonDocument.Parse(r.Config).RootElement.Clone())).ToList()));
-
-        var repo = new LogRepository(ds);
-        long count = 0;
-        await foreach (var (log, body) in repo.StreamWithBodiesAsync(new LogQuery { MissionId = mission.Id }, null, 500, ct))
+        try
         {
-            await Write(new Line("log",
-                Log: new ExportLog(log.Id, log.Ts, log.Method, log.Path, log.Query, log.MainStatus, log.DevStatus, log.MainMs, log.DevMs,
-                    (short)log.Verdict, log.DiffKinds, log.DiffCount, log.Signature, log.RulesVersion, (short)log.Source, log.ReplayOf, log.Note,
-                    log.SummaryJson is null ? null : JsonDocument.Parse(log.SummaryJson).RootElement.Clone()),
-                Body: new ExportBody(1, B64(body.RequestHeaders), B64(body.RequestBody), B64(body.MainHeaders), B64(body.MainBody),
-                    B64(body.DevHeaders), B64(body.DevBody), B64(body.Diff))));
-            if (++count % 1000 == 0 && progress is not null) await progress(count);
+            async Task Write(Line line) => await w.WriteLineAsync(JsonSerializer.Serialize(line, Options).AsMemory(), ct);
+
+            await Write(new Line("header", Format, Version, DateTimeOffset.UtcNow));
+            await Write(new Line("mission",
+                Mission: new ExportMission(mission.Slug, mission.Name, mission.Description, mission.MainUrl, mission.DevUrl, mission.Enabled,
+                    mission.MirrorEnabled, mission.SampleRate, mission.MirrorMethods, mission.MaxMirrorBodyBytes, mission.DevTimeoutMs,
+                    mission.DevMaxConcurrency, JsonDocument.Parse(mission.HeaderPolicy).RootElement.Clone(), mission.ComparedHeaders,
+                    mission.RulesVersion, mission.RetentionDays, mission.MaxStorageMb),
+                Rules: mission.Rules.OrderBy(r => r.Order)
+                    .Select(r => new ExportRule(r.Order, r.Type, r.Name, r.Enabled, JsonDocument.Parse(r.Config).RootElement.Clone())).ToList()));
+
+            var repo = new LogRepository(ds);
+            long count = 0;
+            await foreach (var (log, body) in repo.StreamWithBodiesAsync(new LogQuery { MissionId = mission.Id }, null, 500, ct))
+            {
+                await Write(new Line("log",
+                    Log: new ExportLog(log.Id, log.Ts, log.Method, log.Path, log.Query, log.MainStatus, log.DevStatus, log.MainMs, log.DevMs,
+                        (short)log.Verdict, log.DiffKinds, log.DiffCount, log.Signature, log.RulesVersion, (short)log.Source, log.ReplayOf, log.Note,
+                        log.SummaryJson is null ? null : JsonDocument.Parse(log.SummaryJson).RootElement.Clone()),
+                    Body: new ExportBody(1, B64(body.RequestHeaders), B64(body.RequestBody), B64(body.MainHeaders), B64(body.MainBody),
+                        B64(body.DevHeaders), B64(body.DevBody), B64(body.Diff))));
+                if (++count % 1000 == 0 && progress is not null) await progress(count);
+            }
+            await Write(new Line("end", Count: count));
+            await w.FlushAsync(ct);
+            return count;
         }
-        await Write(new Line("end", Count: count));
-        await w.FlushAsync(ct);
-        await w.DisposeAsync();
-        await gz.DisposeAsync();
-        return count;
+        finally
+        {
+            await w.DisposeAsync();
+            await gz.DisposeAsync();
+        }
     }
 
     private static string? B64(byte[]? b) => b is null ? null : Convert.ToBase64String(b);

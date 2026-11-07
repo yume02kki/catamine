@@ -65,7 +65,7 @@ export function MissionsPage() {
       </header>
 
       <section className="kpis" aria-label="Fleet">
-        <div className="kpi"><span className="kpi-label">Mirrored (24 h)</span><span className="kpi-value">{fmtCompact(totals.total)}</span><span className="kpi-sub">{fmtInt(totals.total / 1440)} / min on average</span></div>
+        <div className="kpi"><span className="kpi-label">Mirrored (24 h)</span><span className="kpi-value">{fmtCompact(totals.total)}</span><span className="kpi-sub">{totals.total > 0 && totals.total < 1440 ? "< 1" : fmtInt(totals.total / 1440)} / min on average</span></div>
         <div className="kpi"><span className="kpi-label">Mirroring cost on main path</span><span className="kpi-value ok">{overhead.length ? `+${fmtMs(Math.max(0, ...overhead))}` : "—"}</span><span className="kpi-sub">avg, mirrored vs not</span></div>
         <div className="kpi"><span className="kpi-label">Dropped mirror jobs</span><span className={`kpi-value ${dropped > 0 ? "warn" : "ok"}`}>{fmtInt(dropped)}</span><span className="kpi-sub">queue {fmtInt(queue)} / {fmtCompact(capacity)}</span></div>
         <div className="kpi"><span className="kpi-label">Dev errors (24 h)</span><span className={`kpi-value ${totals.errors > 0 ? "bad" : "ok"}`}>{fmtInt(totals.errors)}</span><span className="kpi-sub">{proxies?.length ?? 0} proxies reporting</span></div>

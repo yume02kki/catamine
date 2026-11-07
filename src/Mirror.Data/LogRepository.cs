@@ -259,6 +259,36 @@ public sealed class LogRepository(NpgsqlDataSource ds)
         await tx.CommitAsync(ct);
     }
 
+    /// <summary>
+    /// Moves rows between verdicts in the per-minute rollup after a re-diff changed them, so mission stats stay
+    /// consistent with the log. Only live rows are counted in the rollup.
+    /// </summary>
+    public async Task MoveStatsAsync(IReadOnlyList<(Guid MissionId, DateTime Ts, Verdict From, Verdict To, float MainMs, float? DevMs)> moves, CancellationToken ct)
+    {
+        if (moves.Count == 0) return;
+        var rows = moves.SelectMany(m =>
+        {
+            var bucket = new DateTime(m.Ts.Ticks - m.Ts.Ticks % TimeSpan.TicksPerMinute, DateTimeKind.Utc);
+            return new[] { (m.MissionId, bucket, m.From, -1L, -(double)m.MainMs, -(double)(m.DevMs ?? 0)), (m.MissionId, bucket, m.To, 1L, (double)m.MainMs, (double)(m.DevMs ?? 0)) };
+        }).GroupBy(r => (r.MissionId, r.bucket, r.Item3))
+          .Select(g => (g.Key.MissionId, g.Key.bucket, g.Key.Item3, g.Sum(x => x.Item4), g.Sum(x => x.Item5), g.Sum(x => x.Item6)))
+          .Where(r => r.Item4 != 0).ToList();
+        if (rows.Count == 0) return;
+        await using var cmd = ds.CreateCommand("""
+            INSERT INTO traffic_stats_minute AS s (mission_id, bucket, verdict, n, main_ms_sum, dev_ms_sum)
+            SELECT * FROM unnest(@m::uuid[], @b::timestamptz[], @v::smallint[], @n::bigint[], @mm::float8[], @dm::float8[])
+            ON CONFLICT (mission_id, bucket, verdict) DO UPDATE
+            SET n = greatest(0, s.n + excluded.n), main_ms_sum = s.main_ms_sum + excluded.main_ms_sum, dev_ms_sum = s.dev_ms_sum + excluded.dev_ms_sum
+            """);
+        cmd.Parameters.AddWithValue("m", rows.Select(r => r.MissionId).ToArray());
+        cmd.Parameters.AddWithValue("b", rows.Select(r => r.bucket).ToArray());
+        cmd.Parameters.AddWithValue("v", rows.Select(r => (short)r.Item3).ToArray());
+        cmd.Parameters.AddWithValue("n", rows.Select(r => r.Item4).ToArray());
+        cmd.Parameters.AddWithValue("mm", rows.Select(r => r.Item5).ToArray());
+        cmd.Parameters.AddWithValue("dm", rows.Select(r => r.Item6).ToArray());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     public sealed record VerdictCount(Verdict Verdict, long Count, double MainMsAvg, double DevMsAvg);
 
     /// <summary>Counts per verdict over a window, from the per-minute rollup (cheap even for millions of rows).</summary>

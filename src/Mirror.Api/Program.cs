@@ -76,7 +76,8 @@ app.UseExceptionHandler(e => e.Run(async ctx =>
     ctx.Response.StatusCode = status;
     await ctx.Response.WriteAsJsonAsync(new { error = message });
 }));
-app.UseCors();
+// CORS only when the UI is served from another origin (Api__CorsOrigins); same-origin needs none.
+if ((app.Configuration.GetSection("Api:CorsOrigins").Get<string[]>() ?? []).Length > 0) app.UseCors();
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/readyz", async (NpgsqlDataSource ds, CancellationToken ct) =>
