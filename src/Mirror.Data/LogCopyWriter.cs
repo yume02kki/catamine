@@ -45,6 +45,8 @@ public static class LogCopyWriter
     {
         await using var conn = await dataSource.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        // Log rows are best-effort by design: don't wait for the WAL flush (config tables keep full durability).
+        await using (var sc = new NpgsqlCommand("SET LOCAL synchronous_commit = off", conn, tx)) await sc.ExecuteNonQueryAsync(ct);
 
         await using (var w = await conn.BeginBinaryImportAsync(CopyLog, ct))
         {

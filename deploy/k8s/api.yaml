@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mirror-api
+  namespace: api-mirror
+spec:
+  selector: { app: mirror-api }
+  ports: [{ name: http, port: 8080, targetPort: 8080 }]
+---
+# Export files written by export jobs and import uploads. With more than one api replica use a
+# ReadWriteMany storage class so any replica can serve downloads and run import jobs.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mirror-exports
+  namespace: api-mirror
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: { storage: 50Gi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mirror-api
+  namespace: api-mirror
+spec:
+  replicas: 1
+  strategy: { type: Recreate }   # RWO export volume; switch to RollingUpdate with RWX storage
+  selector:
+    matchLabels: { app: mirror-api }
+  template:
+    metadata:
+      labels: { app: mirror-api }
+    spec:
+      securityContext: { runAsNonRoot: true, fsGroup: 1654 }
+      containers:
+        - name: api
+          image: ghcr.io/your-org/mirror-api:latest
+          ports: [{ containerPort: 8080, name: http }]
+          envFrom:
+            - configMapRef: { name: mirror-config }
+            - secretRef: { name: mirror-secrets }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 500m, memory: 512Mi }
+            limits: { memory: 2Gi }
+          volumeMounts:
+            - { name: exports, mountPath: /data/exports }
+      volumes:
+        - name: exports
+          persistentVolumeClaim: { claimName: mirror-exports }

@@ -1,0 +1,19 @@
+# One-shot schema migration (EF Core migrations + partitioned log tables). Re-run on every release:
+#   kubectl -n api-mirror delete job mirror-migrate --ignore-not-found && kubectl apply -f migrate-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mirror-migrate
+  namespace: api-mirror
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: ghcr.io/your-org/mirror-api:latest
+          args: ["--migrate-only"]
+          envFrom:
+            - secretRef: { name: mirror-secrets }

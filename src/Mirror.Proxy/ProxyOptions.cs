@@ -8,7 +8,7 @@ public sealed class ProxyOptions
     /// <summary>Concurrent mirror workers (mostly waiting on Dev I/O).</summary>
     public int Workers { get; set; } = 64;
     /// <summary>Concurrent CPU-bound diff computations; keeps diffing from competing with the main path for cores.</summary>
-    public int DiffConcurrency { get; set; } = Math.Max(1, Environment.ProcessorCount / 2);
+    public int DiffConcurrency { get; set; } = Math.Max(1, Environment.ProcessorCount / 4);
     /// <summary>Main responses larger than this are not mirrored (they are still forwarded normally).</summary>
     public int MaxCapturedResponseBytes { get; set; } = 8 * 1024 * 1024;
     /// <summary>Global cap on bytes held by in-flight captures. When reached, new requests are simply not sampled.</summary>

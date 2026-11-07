@@ -1,0 +1,34 @@
+# Non-secret configuration shared by the services. Every key is an environment variable.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mirror-config
+  namespace: api-mirror
+data:
+  # proxy
+  Mirror__QueueCapacity: "10000"
+  Mirror__Workers: "64"
+  Mirror__MaxInFlightCaptureBytes: "268435456"
+  Mirror__MaxCapturedResponseBytes: "8388608"
+  Mirror__LogBatchSize: "500"
+  Mirror__LogFlushIntervalMs: "1000"
+  Mirror__ConfigRefreshSeconds: "5"
+  Mirror__SnapshotFile: /var/cache/mirror/snapshot.json
+  # api
+  Api__MigrateOnStartup: "false"     # the migrate Job runs migrations
+  Api__ExportDir: /data/exports
+  Api__MaxConcurrentJobs: "4"
+  Api__MaintenanceIntervalMinutes: "10"
+  # web
+  API_UPSTREAM: http://mirror-api:8080
+---
+# Replace these values (or manage the Secret with your secret store). Example only.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mirror-secrets
+  namespace: api-mirror
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: change-me
+  ConnectionStrings__Postgres: Host=mirror-postgres;Database=mirror;Username=mirror;Password=change-me

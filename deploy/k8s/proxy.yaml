@@ -1,0 +1,90 @@
+# Stateless; scale horizontally. Does not depend on the api or the UI, and keeps forwarding if Postgres is down.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mirror-proxy
+  namespace: api-mirror
+  labels: { app: mirror-proxy }
+spec:
+  selector: { app: mirror-proxy }
+  ports: [{ name: http, port: 8080, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mirror-proxy
+  namespace: api-mirror
+spec:
+  replicas: 3
+  strategy:
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app: mirror-proxy }
+  template:
+    metadata:
+      labels: { app: mirror-proxy }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext: { runAsNonRoot: true }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: mirror-proxy } }
+      containers:
+        - name: proxy
+          image: ghcr.io/your-org/mirror-proxy:latest
+          ports: [{ containerPort: 8080, name: http }]
+          envFrom:
+            - configMapRef: { name: mirror-config }
+            - secretRef: { name: mirror-secrets }
+          env:
+            - name: Mirror__InstanceId
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+          # Ready once a config snapshot is loaded; stays ready if Postgres goes away later.
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 }   # let the load balancer stop routing before shutdown
+          resources:
+            requests: { cpu: "1", memory: 512Mi }
+            limits: { memory: 1536Mi }
+          volumeMounts:
+            - { name: cache, mountPath: /var/cache/mirror }
+      volumes:
+        - name: cache
+          emptyDir: {}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mirror-proxy
+  namespace: api-mirror
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: mirror-proxy }
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mirror-proxy
+  namespace: api-mirror
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { app: mirror-proxy }

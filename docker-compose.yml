@@ -1,0 +1,116 @@
+# docker compose up --build                       → postgres, api, proxy, web
+# docker compose --profile demo up --build        → + two sample upstreams and a seeded demo mission
+# docker compose --profile loadtest up -d --build && docker compose run --rm k6
+#
+# Ports: web http://localhost:3000 · api http://localhost:8081 · proxy http://localhost:8080/m/{slug}/…
+name: api-mirror
+
+x-postgres-cs: &pg "Host=postgres;Database=mirror;Username=mirror;Password=${POSTGRES_PASSWORD:-mirror}"
+x-health: &health
+  interval: 5s
+  timeout: 3s
+  retries: 30
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: mirror
+      POSTGRES_USER: mirror
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mirror}
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "max_wal_size=4GB", "-c", "checkpoint_timeout=15min"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      <<: *health
+      test: ["CMD-SHELL", "pg_isready -U mirror -d mirror"]
+    restart: unless-stopped
+
+  api:
+    build: { context: ., dockerfile: deploy/docker/api.Dockerfile }
+    environment:
+      ConnectionStrings__Postgres: *pg
+      Api__MigrateOnStartup: "true"
+      Api__ExportDir: /data/exports
+      Api__MaxConcurrentJobs: "4"
+    volumes:
+      - exports:/data/exports
+    ports: ["8081:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *health
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /readyz HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
+    restart: unless-stopped
+
+  proxy:
+    build: { context: ., dockerfile: deploy/docker/proxy.Dockerfile }
+    # Deliberately does NOT depend on the api: the proxy reads its config from Postgres and keeps
+    # forwarding to Main even if the api, the UI or Postgres are down.
+    environment:
+      ConnectionStrings__Postgres: *pg
+      Mirror__QueueCapacity: "10000"
+      Mirror__Workers: "64"
+      Mirror__MaxInFlightCaptureBytes: "268435456"
+      Mirror__SnapshotFile: /var/cache/mirror/snapshot.json
+    volumes:
+      - proxycache:/var/cache/mirror
+    ports: ["8080:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      <<: *health
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
+    restart: unless-stopped
+
+  web:
+    build: { context: ., dockerfile: deploy/docker/web.Dockerfile }
+    environment:
+      API_UPSTREAM: http://api:8080
+    ports: ["3000:8080"]
+    depends_on: [api]
+    healthcheck:
+      <<: *health
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+    restart: unless-stopped
+
+  # ── demo / load test helpers ───────────────────────────────────────────
+  upstream-main:
+    profiles: [demo, loadtest]
+    build: { context: ., dockerfile: deploy/docker/testupstream.Dockerfile }
+    environment: { VARIANT: main }
+
+  upstream-dev:
+    profiles: [demo, loadtest]
+    build: { context: ., dockerfile: deploy/docker/testupstream.Dockerfile }
+    environment: { VARIANT: dev, DELAY_MS: "5", JITTER_MS: "20", ERROR_RATE: "0.01", SLOW_RATE: "0.005", SLOW_MS: "3000" }
+
+  seed:
+    profiles: [demo, loadtest]
+    image: curlimages/curl:8.11.1
+    depends_on:
+      api: { condition: service_healthy }
+    volumes:
+      - ./deploy/seed:/seed:ro
+    entrypoint: ["sh", "/seed/seed.sh"]
+    environment: { API: http://api:8080 }
+
+  k6:
+    profiles: [loadtest]
+    image: grafana/k6:0.57.0
+    depends_on: [proxy, upstream-main, upstream-dev]
+    volumes:
+      - ./loadtest:/scripts
+    environment:
+      PROXY: http://proxy:8080
+      MAIN: http://upstream-main:8080
+      DEV: http://upstream-dev:8080
+      API: http://api:8080
+      RATE: ${RATE:-1500}
+      DURATION: ${DURATION:-60s}
+    command: ["run", "--summary-export=/scripts/results/summary.json", "/scripts/proxy-load.js"]
+
+volumes:
+  pgdata:
+  exports:
+  proxycache:

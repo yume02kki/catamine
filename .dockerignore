@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+**/node_modules/
+web/dist/
+.git/
+.vs/
+.idea/
+loadtest/results/

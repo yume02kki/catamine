@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: api-mirror
+resources:
+  - namespace.yaml
+  - config.yaml
+  - postgres.yaml
+  - migrate-job.yaml
+  - api.yaml
+  - proxy.yaml
+  - web.yaml
+  - ingress.yaml
+# Point the images at your registry:
+images:
+  - { name: ghcr.io/your-org/mirror-api, newTag: latest }
+  - { name: ghcr.io/your-org/mirror-proxy, newTag: latest }
+  - { name: ghcr.io/your-org/mirror-web, newTag: latest }
