@@ -1,0 +1,10 @@
+bin/
+obj/
+*.user
+.vs/
+.idea/
+node_modules/
+dist/
+*.swp
+loadtest/results/*.json
+!loadtest/results/.gitkeep
