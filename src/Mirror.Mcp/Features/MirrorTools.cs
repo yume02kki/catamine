@@ -353,7 +353,15 @@ public static partial class MirrorTools
             async (a, _, ct) =>
             {
                 var m = await api.ResolveMissionAsync(a.Req("mission"), ct);
-                var r = await api.PostAsync($"/api/missions/{m["id"]}/logs/{RequestId(a)}/replay{(a.Bool("allow_writes") ? "?allowUnsafe=true" : "")}", null, ct);
+                JsonNode r;
+                try
+                {
+                    r = await api.PostAsync($"/api/missions/{m["id"]}/logs/{RequestId(a)}/replay{(a.Bool("allow_writes") ? "?allowUnsafe=true" : "")}", null, ct);
+                }
+                catch (ApiException ex) when (ex.Status == 400 && ex.Message.Contains("allowUnsafe", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new ToolException(WriteRefusal("Replaying this request"));
+                }
                 var o = r["original"]!; var n = r["replay"]!;
                 return new ToolResult($"Replayed {o["method"]} {o["path"]}. Original: {o["verdict"]} ({o["diffCount"]} differences). Now: {n["verdict"]} ({n["diffCount"]} differences), new request_id {n["id"]}.", r.DeepClone());
             });
@@ -405,10 +413,19 @@ public static partial class MirrorTools
                     ["hugeStringLength"] = 65536,
                 };
                 if (a.List("mutations") is { Length: > 0 } muts) body["mutations"] = new JsonArray(muts.Select(x => (JsonNode)x).ToArray());
-                if (a.Str("request_id") is not null) body["seedLogId"] = RequestId(a);
+                if (a.Str("request_id") is not null)
+                {
+                    body["seedLogId"] = RequestId(a);
+                    if (!a.Bool("allow_writes"))
+                    {
+                        var seed = await api.GetAsync($"/api/missions/{m["id"]}/logs/{RequestId(a)}", ct);
+                        if (IsWrite((string?)seed["method"])) throw new ToolException(WriteRefusal($"Fuzzing this {seed["method"]} request"));
+                    }
+                }
                 else
                 {
                     var path = a.Str("path") ?? throw new ToolException("give request_id, or method and path");
+                    if (IsWrite(a.Str("method")) && !a.Bool("allow_writes")) throw new ToolException(WriteRefusal($"Fuzzing {a.Str("method")!.ToUpperInvariant()} {path}"));
                     body["sample"] = new JsonObject
                     {
                         ["method"] = (a.Str("method") ?? "GET").ToUpperInvariant(), ["path"] = path.StartsWith('/') ? path : "/" + path,
@@ -576,6 +593,11 @@ public static partial class MirrorTools
         parts.AddRange((i["diffKinds"] as JsonArray ?? []).Select(k => (string?)k).Where(k => k is not null && !FieldKinds.Contains(k)).Select(k => k!.Replace('_', ' ')));
         return parts.Count == 0 ? "see get_request_diff" : string.Join(", ", parts);
     }
+
+    private static bool IsWrite(string? method) => method is not null && !(method.Equals("GET", StringComparison.OrdinalIgnoreCase) || method.Equals("HEAD", StringComparison.OrdinalIgnoreCase) || method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase));
+
+    private static string WriteRefusal(string what) =>
+        $"{what} sends write requests to Main, which is production, and to Dev. Nothing was sent. Call again with allow_writes=true only if the user confirmed that this is safe.";
 
     private static string Row(JsonObject i)
     {

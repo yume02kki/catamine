@@ -30,7 +30,7 @@ public class McpServerTests : IAsyncLifetime
     private async Task<JsonObject> CallAsync(McpSession s, string tool, JsonObject? args = null)
     {
         var r = (JsonObject)(await _server.HandleAsync(Req(9, "tools/call", new JsonObject { ["name"] = tool, ["arguments"] = args ?? new JsonObject() }), s, default))!;
-        Assert.Null(r["error"]);
+        Assert.True(r["error"] is null, r["error"]?.ToJsonString());
         return (JsonObject)r["result"]!;
     }
 
@@ -209,6 +209,31 @@ public class McpServerTests : IAsyncLifetime
         Assert.True((bool)r["isError"]!);
         Assert.Contains("read-only", Text(r));
         Assert.DoesNotContain(_api.Calls, c => c.Method == "PUT");
+    }
+
+    [Fact]
+    public async Task Write_replays_and_fuzzing_are_refused_without_allow_writes()
+    {
+        var s = await InitAsync();
+        var replay = await CallAsync(s, "replay_request", new JsonObject { ["mission"] = "echo-apis", ["request_id"] = FakeApi.PostLogId });
+        Assert.True((bool)replay["isError"]!);
+        Assert.Contains("allow_writes=true", Text(replay));
+        Assert.DoesNotContain("allowUnsafe", Text(replay));
+
+        var ok = await CallAsync(s, "replay_request", new JsonObject { ["mission"] = "echo-apis", ["request_id"] = FakeApi.PostLogId, ["allow_writes"] = true });
+        Assert.False((bool)ok["isError"]!, Text(ok));
+        Assert.Contains("Now: match", Text(ok));
+
+        var calls = _api.Calls.Count(c => c.Path.Contains("/jobs/fuzz"));
+        var fuzz = await CallAsync(s, "start_fuzz", new JsonObject { ["mission"] = "echo-apis", ["request_id"] = FakeApi.PostLogId });
+        Assert.True((bool)fuzz["isError"]!);
+        Assert.Contains("allow_writes=true", Text(fuzz));
+        var fuzz2 = await CallAsync(s, "start_fuzz", new JsonObject { ["mission"] = "echo-apis", ["method"] = "delete", ["path"] = "/items/1" });
+        Assert.True((bool)fuzz2["isError"]!);
+        Assert.Equal(calls, _api.Calls.Count(c => c.Path.Contains("/jobs/fuzz"))); // nothing queued
+
+        var get = await CallAsync(s, "start_fuzz", new JsonObject { ["mission"] = "echo-apis", ["request_id"] = FakeApi.LogId, ["volume"] = 5 });
+        Assert.False((bool)get["isError"]!, Text(get));
     }
 
     [Fact]

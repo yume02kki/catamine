@@ -15,6 +15,8 @@ public sealed class ApiException(string message, int status = 0) : Exception(mes
 /// <summary>Thin client for the KittyParty api service. The MCP server never talks to Postgres or the proxy directly.</summary>
 public sealed class KittyApi
 {
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
+
     private readonly HttpClient _http;
     private readonly string _base;
     private JsonArray? _missions;
@@ -149,5 +151,5 @@ public sealed class KittyApi
         return i < 0 ? c : Plain[i];
     }
 
-    public static JsonObject Body(object anonymous) => JsonSerializer.SerializeToNode(anonymous, JsonSerializerOptions.Web)!.AsObject();
+    public static JsonObject Body(object anonymous) => JsonSerializer.SerializeToNode(anonymous, WebJson)!.AsObject();
 }

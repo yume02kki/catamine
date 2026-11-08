@@ -12,6 +12,18 @@ public class FuzzGeneratorTests
         """{"customer":{"id":42,"vip":true},"items":[{"sku":"A","qty":1}],"note":"hi"}""");
 
     [Fact]
+    public void Huge_query_strings_stay_within_url_limits_while_bodies_get_the_full_length()
+    {
+        var seed = new FuzzSeed("POST", "/s", "q=lamp", null, """{"name":"kitty"}""");
+        var cases = FuzzGenerator.Generate(seed, new FuzzOptions { Volume = 1000, Mutations = ["huge_string"] }).ToList();
+        var inQuery = cases.Single(c => c.Target == "query.q");
+        Assert.Equal(32 * 1024, inQuery.Query!.Length - "q=".Length);
+        Assert.True(Uri.TryCreate("https://example.test" + inQuery.PathAndQuery, UriKind.Absolute, out _));
+        var inBody = cases.First(c => c.Target == "$.name");
+        Assert.Contains(new string('x', 64 * 1024), inBody.Body);
+    }
+
+    [Fact]
     public void Generates_each_mutation_family()
     {
         var cases = FuzzGenerator.Generate(Seed, new FuzzOptions { Volume = 10_000, HugeStringLength = 100 }).ToList();

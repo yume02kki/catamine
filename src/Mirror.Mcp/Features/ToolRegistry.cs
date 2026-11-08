@@ -135,12 +135,16 @@ public sealed class Args(JsonObject raw)
 
     public string Req(string name) => Str(name, required: true)!;
 
+    /// <summary>Reads any JSON number, whether parsed from text or built in code from an int, long, decimal, ….</summary>
+    private static double Number(JsonValue j) =>
+        j.TryGetValue<double>(out var d) ? d : double.Parse(j.ToJsonString(), System.Globalization.CultureInfo.InvariantCulture);
+
     public int Int(string name, int @default, int min, int max)
     {
         var v = Get(name);
         if (v is null) return @default;
         int n;
-        if (v is JsonValue j && j.GetValueKind() == JsonValueKind.Number) n = (int)Math.Round(j.GetValue<double>());
+        if (v is JsonValue j && j.GetValueKind() == JsonValueKind.Number) n = (int)Math.Round(Number(j));
         else if (!int.TryParse(Str(name), NumberStyles.Integer, CultureInfo.InvariantCulture, out n))
             throw new ToolException($"'{name}' must be a whole number");
         return Math.Clamp(n, min, max);
@@ -150,7 +154,7 @@ public sealed class Args(JsonObject raw)
     {
         var v = Get(name);
         if (v is null) return null;
-        if (v is JsonValue j && j.GetValueKind() == JsonValueKind.Number) return j.GetValue<double>();
+        if (v is JsonValue j && j.GetValueKind() == JsonValueKind.Number) return Number(j);
         var s = Str(name)?.TrimEnd('%');
         if (s is null) return null;
         if (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d)) throw new ToolException($"'{name}' must be a number");

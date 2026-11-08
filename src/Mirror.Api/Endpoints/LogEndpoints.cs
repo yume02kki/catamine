@@ -13,6 +13,8 @@ namespace Mirror.Api.Endpoints;
 
 public static class LogEndpoints
 {
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
+
     public static void Map(WebApplication app)
     {
         var g = app.MapGroup("/api/missions/{missionId:guid}");
@@ -150,7 +152,7 @@ public static class LogEndpoints
                             items = rows.Select(LogItemDto.From),
                             truncated = rows.Count == 200,
                             cursor = Data.Cursor.Encode(new Data.Cursor(0, lastTs, lastId)),
-                        }, JsonSerializerOptions.Web);
+                        }, WebJson);
                         await http.Response.WriteAsync($"event: logs\ndata: {payload}\n\n", ct);
                         await http.Response.Body.FlushAsync(ct);
                         idle = 0;

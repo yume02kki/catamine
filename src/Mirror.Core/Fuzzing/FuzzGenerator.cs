@@ -11,6 +11,11 @@ public sealed record FuzzOptions
 {
     public int Volume { get; init; } = 500;
     public int HugeStringLength { get; init; } = 64 * 1024;
+    /// <summary>
+    /// Cap for huge strings placed in the query string. Servers reject URLs far shorter than this (414/431), which is
+    /// what the mutation probes, and System.Uri on .NET 8 refuses URLs longer than 65,519 characters.
+    /// </summary>
+    public int MaxUrlStringLength { get; init; } = 32 * 1024;
     public int MaxFields { get; init; } = 200;
     public int Seed { get; init; } = 42;
     /// <summary>Mutation families to use; empty = all.</summary>
@@ -64,6 +69,7 @@ public static class FuzzGenerator
     {
         var headers = seed.Headers ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var huge = new string('x', o.HugeStringLength);
+        var hugeInUrl = huge.Length <= o.MaxUrlStringLength ? huge : huge[..o.MaxUrlStringLength];
 
         // Query parameters.
         var query = ParseQuery(seed.Query);
@@ -73,7 +79,7 @@ public static class FuzzGenerator
             var target = $"query.{name}";
             IEnumerable<(string, string?)> variants = new List<(string, string?)>
             {
-                ("missing", null), ("empty", ""), ("huge_string", huge), ("boundary_number", "-1"), ("boundary_number", "2147483648"),
+                ("missing", null), ("empty", ""), ("huge_string", hugeInUrl), ("boundary_number", "-1"), ("boundary_number", "2147483648"),
                 ("wrong_type", int.TryParse(value, out _) ? "abc" : "12345"),
             }.Concat(SpecialStrings.Select(s => ("special_chars", (string?)s)));
             foreach (var (mutation, v) in variants)

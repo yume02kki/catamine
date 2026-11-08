@@ -39,7 +39,7 @@ public static partial class MissionEndpoints
             var now = DateTimeOffset.UtcNow;
             var m = new MissionEntity
             {
-                Id = Guid.CreateVersion7(),
+                Id = Uuid7.NewGuid(),
                 Slug = body.Slug?.Trim().ToLowerInvariant() ?? "",
                 Name = body.Name?.Trim() ?? "",
                 MainUrl = body.MainUrl?.Trim() ?? "",
@@ -153,7 +153,7 @@ public static partial class MissionEndpoints
                 {
                     db.MissionRules.Add(new MissionRuleEntity
                     {
-                        Id = Guid.CreateVersion7(), MissionId = id, Order = i, Type = RuleRegistry.CanonicalName(r.Type),
+                        Id = Uuid7.NewGuid(), MissionId = id, Order = i, Type = RuleRegistry.CanonicalName(r.Type),
                         Name = r.Name, Enabled = r.Enabled, Config = r.Config.GetRawText(),
                     });
                 }

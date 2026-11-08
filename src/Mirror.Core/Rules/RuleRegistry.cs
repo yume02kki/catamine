@@ -20,7 +20,7 @@ public static class RuleRegistry
     private sealed record Entry(RuleTypeInfo Info, Func<JsonElement, IDiffRule> Create, Func<JsonElement, IReadOnlyList<string>> Validate);
 
     private static readonly Dictionary<string, Entry> Entries = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly Lock Gate = new();
+    private static readonly object Gate = new();
 
     static RuleRegistry()
     {

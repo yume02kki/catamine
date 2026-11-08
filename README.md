@@ -174,6 +174,8 @@ On each release, delete and re-apply `job/mirror-migrate` before rolling out the
 
 ## Development
 
+Everything targets **.NET 8** (LTS). `global.json` pins the .NET 8 SDK (any 8.0 feature band); the solution is `Mirror.sln`. The frontend needs Node 20+.
+
 ```bash
 dotnet test                     # xUnit: diff engine, every rule type, fuzz generator, codec, proxy safety tests, MCP server
 (cd web && npm ci && npm test)  # vitest: side-by-side alignment, folding, key matching, search syntax, rule suggestions

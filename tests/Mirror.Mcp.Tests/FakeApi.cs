@@ -16,6 +16,7 @@ public sealed class FakeApi : IAsyncDisposable
     public const string EchoId = "11111111-0000-0000-0000-000000000001";
     public const string PokeId = "11111111-0000-0000-0000-000000000002";
     public const string LogId = "01a1b728-d8c6-72c5-81c4-3fe2c070e4c6";
+    public const string PostLogId = "01a1b728-d8c6-72c5-81c4-3fe2c070e4c8";
 
     private readonly WebApplication _app;
     public string Url { get; }
@@ -112,6 +113,14 @@ public sealed class FakeApi : IAsyncDisposable
             ["differences"] = new JsonArray(new JsonObject { ["k"] = "removed", ["p"] = "$.method", ["m"] = "\"GET\"", ["d"] = null }),
         }));
         app.MapGet("/api/missions/{id}/logs/{logId}/body/{side}", (string side) => Results.Text(side == "main" ? "{\"method\":\"GET\",\"args\":{}}" : "{\"args\":{}}", "application/json"));
+        app.MapGet("/api/missions/{id}/logs/{logId}", (string logId) => J(new JsonObject { ["id"] = logId, ["method"] = logId == PostLogId ? "POST" : "GET", ["path"] = "/post" }));
+        app.MapPost("/api/missions/{id}/logs/{logId}/replay", (string logId, bool? allowUnsafe) => logId == PostLogId && allowUnsafe != true
+            ? Results.Json(new { error = "Replaying POST re-sends a write to Main and Dev. Pass allowUnsafe=true to confirm." }, statusCode: 400)
+            : J(new JsonObject
+            {
+                ["original"] = new JsonObject { ["method"] = "POST", ["path"] = "/post", ["verdict"] = "mismatch", ["diffCount"] = 2 },
+                ["replay"] = new JsonObject { ["id"] = "01a1b728-d8c6-72c5-81c4-3fe2c070e4c7", ["verdict"] = "match", ["diffCount"] = 0 },
+            }));
         app.MapPost("/api/missions/{id}/jobs/{type}", (string type) => J(new JsonObject { ["id"] = "33333333-0000-0000-0000-000000000003", ["type"] = type, ["status"] = "queued" }));
         app.MapDelete("/api/missions/{id}", () => Results.NoContent());
         app.MapPost("/api/missions", () => J(Mission("44444444-0000-0000-0000-000000000004", "new-one", "New one", "https://a.test", "https://b.test", ["GET"])));

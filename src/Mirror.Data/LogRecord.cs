@@ -1,3 +1,4 @@
+using Mirror.Core.Models;
 using System.Text.Json;
 using Mirror.Core.Compression;
 using Mirror.Core.Diffing;
@@ -56,7 +57,7 @@ public sealed class LogRecord
     {
         var now = at ?? DateTimeOffset.UtcNow;
         var ms = new DateTimeOffset(now.UtcTicks - now.UtcTicks % TimeSpan.TicksPerMillisecond, TimeSpan.Zero);
-        return (Guid.CreateVersion7(ms), ms.UtcDateTime);
+        return (Uuid7.NewGuid(ms), ms.UtcDateTime);
     }
 
     /// <summary>Extracts the timestamp embedded in a UUIDv7 log id (used to prune partitions on lookups).</summary>

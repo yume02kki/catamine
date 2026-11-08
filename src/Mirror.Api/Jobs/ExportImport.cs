@@ -1,3 +1,4 @@
+using Mirror.Core.Models;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
@@ -246,7 +247,7 @@ public sealed class ImportJob(IServiceScopeFactory scopes, NpgsqlDataSource ds, 
         var now = DateTimeOffset.UtcNow;
         var m = new MissionEntity
         {
-            Id = Guid.CreateVersion7(),
+            Id = Uuid7.NewGuid(),
             Slug = finalSlug,
             Name = src.Name + " (imported)",
             Description = src.Description,
@@ -269,7 +270,7 @@ public sealed class ImportJob(IServiceScopeFactory scopes, NpgsqlDataSource ds, 
             UpdatedAt = now,
             Rules = (line.Rules ?? []).Select(r => new MissionRuleEntity
             {
-                Id = Guid.CreateVersion7(), Order = r.Order, Type = r.Type, Name = r.Name, Enabled = r.Enabled, Config = r.Config.GetRawText(),
+                Id = Uuid7.NewGuid(), Order = r.Order, Type = r.Type, Name = r.Name, Enabled = r.Enabled, Config = r.Config.GetRawText(),
             }).ToList(),
         };
         db.Missions.Add(m);

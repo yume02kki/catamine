@@ -1,3 +1,4 @@
+using Mirror.Core.Models;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -190,7 +191,7 @@ public sealed class JobScheduler(MirrorDbContext db, JobRunner runner)
     {
         var job = new JobEntity
         {
-            Id = Guid.CreateVersion7(),
+            Id = Uuid7.NewGuid(),
             MissionId = missionId,
             Type = type,
             Status = JobStatus.Queued,

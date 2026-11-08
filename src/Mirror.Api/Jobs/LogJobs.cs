@@ -262,14 +262,25 @@ public sealed class FuzzJob(IServiceScopeFactory scopes, NpgsqlDataSource ds, Re
         var index = 0;
         foreach (var c in cases)
         {
-            if (index++ < state.Sent) continue; // resume
+            if (index++ < state.Sent + state.Skipped) continue; // resume
             using var lease = await limiter.AcquireAsync(1, ct);
             var body = c.Body is null ? null : System.Text.Encoding.UTF8.GetBytes(c.Body);
             var headers = c.Headers.ToList();
             if (c.Body is not null && !headers.Any(h => h.Key.Equals("content-type", StringComparison.OrdinalIgnoreCase)))
                 headers.Add(new("Content-Type", "application/json"));
-            var (record, _) = await replay.SendBothAsync(mission, rules, c.Method, c.Path, c.Query, headers, body,
-                new RecordOptions(true, LogSource.Fuzz, ctx.Id, Note: $"fuzz {c.Mutation} {c.Target}"), ct);
+            LogRecord record;
+            try
+            {
+                (record, _) = await replay.SendBothAsync(mission, rules, c.Method, c.Path, c.Query, headers, body,
+                    new RecordOptions(true, LogSource.Fuzz, ctx.Id, Note: $"fuzz {c.Mutation} {c.Target}"), ct);
+            }
+            catch (UriFormatException)
+            {
+                // The variant cannot be expressed as a request (e.g. a URL beyond System.Uri's limit): skip it, keep fuzzing.
+                state.Skipped++;
+                await ctx.ReportAsync(state.Sent + state.Skipped, p.Volume, JsonSerializer.Serialize(state));
+                continue;
+            }
             state.Sent++;
             state.Verdicts.Bump(record.Verdict.ToWire());
             if (record.Verdict != Verdict.Match)
@@ -285,14 +296,15 @@ public sealed class FuzzJob(IServiceScopeFactory scopes, NpgsqlDataSource ds, Re
                 pending.Clear();
                 notifier.Touch(mission.Id);
             }
-            await ctx.ReportAsync(state.Sent, p.Volume, JsonSerializer.Serialize(state));
+            await ctx.ReportAsync(state.Sent + state.Skipped, p.Volume, JsonSerializer.Serialize(state));
         }
         if (pending.Count > 0) await LogCopyWriter.WriteAsync(ds, pending, updateStats: false, ct);
         notifier.Touch(mission.Id);
-        await ctx.ReportAsync(state.Sent, state.Sent, JsonSerializer.Serialize(state), force: true);
+        await ctx.ReportAsync(state.Sent + state.Skipped, state.Sent + state.Skipped, JsonSerializer.Serialize(state), force: true);
         return new
         {
             sent = state.Sent,
+            skipped = state.Skipped,
             verdicts = state.Verdicts,
             mismatchesByMutation = state.MismatchesByMutation,
             topTargets = state.MismatchesByTarget.OrderByDescending(x => x.Value).Take(20).ToDictionary(),
@@ -316,6 +328,7 @@ public sealed class FuzzJob(IServiceScopeFactory scopes, NpgsqlDataSource ds, Re
     private sealed class FuzzState
     {
         public long Sent { get; set; }
+        public long Skipped { get; set; }
         public Dictionary<string, long> Verdicts { get; set; } = [];
         public Dictionary<string, long> MismatchesByMutation { get; set; } = [];
         public Dictionary<string, long> MismatchesByTarget { get; set; } = [];

@@ -1,3 +1,4 @@
+using Mirror.Core.Models;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -48,7 +49,7 @@ public static class JobEndpoints
         {
             var dir = Path.Combine(options.Value.ExportDir, "imports");
             Directory.CreateDirectory(dir);
-            var name = $"{Guid.CreateVersion7():N}.ndjson.gz";
+            var name = $"{Uuid7.NewGuid():N}.ndjson.gz";
             var path = Path.Combine(dir, name);
             Stream source = req.HasFormContentType ? (await req.ReadFormAsync(ct)).Files.FirstOrDefault()?.OpenReadStream() ?? Stream.Null : req.Body;
             await using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
